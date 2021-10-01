@@ -4,16 +4,12 @@
     "_description": "Display help on the specified command (or all commands)."
   },
   "info": {
-    "_syntax": "info <target>",
-    "_description": "Displays information on <target>."
+    "_syntax": "info [<target>]",
+    "_description": "Displays information on <target> (or all targets)."
   },
   "init": {
     "_syntax": "init [<storage-dir>]",
     "_description": "Initializes a project in the current directory (using <storage-dir> as storage directory)."
-  },
-  "list": {
-    "_syntax": "list",
-    "_description": "Lists all dependencies (recursively) of the current project."
   },
   "def": {
     "_syntax": "def (command|target) <id>",

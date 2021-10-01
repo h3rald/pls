@@ -27,14 +27,16 @@ let usage* = """  $1 v$2 - $3
     => For more information on available commands, run: pls help
 
   Options:
-    --log, -l               Specifies the log level (debug|info|notice|warn|error|fatal).
+    --help,    -h           Displays this message.
+    --force,   -f           Do not ask for confirmation when executing the specified command.
+    --global,  -g           Execute command within the global project instead of the local one.
+    --log,     -l           Specifies the log level (debug|info|notice|warn|error|fatal).
                             Default: info
-    --force, -f             Do not ask for confirmation when executing the specified command.
-    --help, -h              Displays this message.
     --version, -h           Displays the version of the application.
 """ % [pkgTitle, pkgVersion, pkgDescription, pkgAuthor]
 
 var force = false
+var global = false
 
 # Helper Methods
 
@@ -71,13 +73,6 @@ proc addProperties(obj: var JsonNode) =
     obj[prop.key] = prop.value
     done = not confirm("Do you want to add/remove more properties?")
 
-proc changeValue(oldv: tuple[label: string, value: JsonNode], newv: tuple[label: string, value: JsonNode]): bool =
-  if oldv.value != newJNull():
-    printDeleted(oldv.label, $oldv.value)
-  if newv.value != newJNull():
-    printAdded(newv.label, $newv.value)
-  return confirm("Confirm change?")
-
 ### MAIN ###
 
 var args = newSeq[string](0)
@@ -89,6 +84,8 @@ for kind, key, val in getopt():
     of cmdLongOption, cmdShortOption:
       case key:
         of "force", "f":
+          force = true
+        of "global", "g":
           force = true
         of "log", "l":
           var val = val
@@ -104,7 +101,24 @@ for kind, key, val in getopt():
     else:
       discard
 
-var prj = newPlsProject(getCurrentDir())
+var localPrj = newPlsProject(getCurrentDir())
+
+var globalPrj: PlsProject
+
+if defined(windows):
+  globalPrj = newPlsProject(getenv("USERPROFILE"))
+if not defined(windows):
+  globalPrj = newPlsProject(getenv("HOME"))
+
+if not globalPrj.configured:
+  globalPrj.init()
+
+globalPrj.load()
+
+var prj = localPrj
+
+if global:
+  prj = globalPrj 
 
 if args.len == 0:
   echo usage
@@ -117,55 +131,72 @@ case args[0]:
     prj.init()
     notice "Project initialized."
   of "def":
-    if args.len < 2:
+    if args.len < 3:
       fatal "No target specified."
       quit(3)
-    let alias = args[1]
+    let kind = args[1]
+    let alias = args[2]
     var props = newJObject()
+    if not ["target", "command"].contains(kind):
+      fatal "Unknown definition type $1" % kind
+      quit(6)
     prj.load
-    if prj.targets.hasKey(alias):
-      notice "Redefining existing target: " & alias
-      warn "Specify properties for target '$1':" % alias
-      props = prj.targets[alias]
-      for k, v in props.mpairs:
-        if k == "name":
-          continue
-        let prop = addProperty(props, k)
-        props[prop.key] = prop.value
-      if confirm "Do you want to add/remove more properties?":
+    if kind == "target":
+      if prj.targets.hasKey(alias):
+        notice "Redefining existing target: " & alias
+        warn "Specify properties for target '$1':" % alias
+        props = prj.targets[alias]
+        for k, v in props.mpairs:
+          if k == "name":
+            continue
+          let prop = addProperty(props, k)
+          props[prop.key] = prop.value
+        if confirm "Do you want to add/remove more properties?":
+          addProperties(props)
+      else:
+        notice "Definining new target: " & alias
+        warn "Specify properties for target '$1':" % alias
         addProperties(props)
-    else:
-      notice "Mapping new target: " & alias
-      warn "Specify properties for target '$1':" % alias
-      addProperties(props)
-    prj.def(alias, props) 
+      prj.def(alias, props) 
+    else: # command
+      # TODO
+      fatal "Not implemented"
+      quit(10)
   of "undef":
-    if args.len < 2:
+    if args.len < 3:
       fatal "No target specified."
       quit(3)
-    let alias = args[1]
+    let kind = args[1]
+    let alias = args[2]
+    if not ["target", "command"].contains(kind):
+      fatal "Unknown definition type $1" % kind
+      quit(6)
     prj.load
-    if not prj.targets.hasKey(alias):
-      fatal "Target '$1' not defined." % [alias]
-      quit(4)
-    if force or confirm("Remove definition for target '$1'?" % alias):
-      prj.undef(alias) 
-  of "list":
-    prj.load
-    # TODO
-    echo "NOT IMPLEMENTED"
+    if kind == "target":
+      if not prj.targets.hasKey(alias):
+        fatal "Target '$1' not defined." % [alias]
+        quit(4)
+      if force or confirm("Remove definition for target '$1'?" % alias):
+        prj.undef(alias) 
+    else: # command
+      # TODO
+      fatal "Not implemented"
+      quit(10)
   of "info":
-    if args.len < 2:
-      fatal "No target specified."
-      quit(3)
     prj.load
-    let alias = args[1]
-    if not prj.targets.hasKey(alias):
-      fatal "Target '$1' not defined." % [alias]
-      quit(4)
-    let data = prj.targets[alias]
-    for k, v in data.pairs:
-      echo "$1:\t$2" % [k, $v]
+    if args.len < 2:
+      for t, props in prj.targets.pairs:
+        echo "$1:" % [t]
+        for k, v in props.pairs:
+          echo " - $1:\t$2" % [k, $v]
+    else:
+      let alias = args[1]
+      if not prj.targets.hasKey(alias):
+        fatal "Target '$1' not defined." % [alias]
+        quit(4)
+      let data = prj.targets[alias]
+      for k, v in data.pairs:
+        echo "$1:\t$2" % [k, $v]
   of "help":
     echo ""
     if args.len < 2:
@@ -193,6 +224,16 @@ case args[0]:
         warn "No targets defined - nothing to do."
         quit(0)
       for key, val in prj.targets.pairs:
-        prj.executeRec(args[0], key) 
+        prj.execute(args[0], key) 
     else:
-      prj.executeRec(args[0], args[1]) 
+      try:
+        prj.execute(args[0], args[1]) 
+      except:
+        # Fallback to global project
+        if prj == localPrj:
+          try:
+            globalPrj.execute(args[0], args[1])
+          except:
+            warn getCurrentExceptionMsg()
+        else:
+          warn getCurrentExceptionMsg()
