@@ -65,13 +65,32 @@ proc addProperty(parentObj: JsonNode, name = ""): tuple[key: string, value: Json
       except:
         warn("Please enter a valid JSON value.")
     done = done or confirm("OK?")
-
+    
 proc addProperties(obj: var JsonNode) =
   var done = false
   while (not done):
     let prop = addProperty(obj)
     obj[prop.key] = prop.value
     done = not confirm("Do you want to add/remove more properties?")
+
+proc addCommandDefinition(parentObj: JsonNode, name = ""): tuple[key: string, value: JsonNode] =
+  # TODO: validate name of command definition! (not _syntax or _description, etc.)
+  if name == "":
+    result.key = editValue("Command Definition Matcher")
+  else:
+    printValue(" Command Definition Matcher", name)
+    result.key = name
+  result.value = newJObject()
+  result.value["cmd"] = addProperty(parentObj[name], "cmd").value
+  result.value["pwd"] = addProperty(parentObj[name], "pwd").value
+  # TODO: delete command definition matcher if all properties are null.
+
+proc addCommandDefinitions(obj: var JsonNode) =
+  var done = false
+  while (not done):
+    let prop = addCommandDefinition(obj)
+    obj[prop.key] = prop.value
+    done = not confirm("Do you want to add/remove more command definitions?") 
 
 ### MAIN ###
 
@@ -86,7 +105,7 @@ for kind, key, val in getopt():
         of "force", "f":
           force = true
         of "global", "g":
-          force = true
+          global = true
         of "log", "l":
           var val = val
           setLogLevel(val)
@@ -132,7 +151,7 @@ case args[0]:
     notice "Project initialized."
   of "def":
     if args.len < 3:
-      fatal "No target specified."
+      fatal "No alias specified."
       quit(3)
     let kind = args[1]
     let alias = args[2]
@@ -157,14 +176,29 @@ case args[0]:
         notice "Definining new target: " & alias
         warn "Specify properties for target '$1':" % alias
         addProperties(props)
-      prj.def(alias, props) 
+      prj.defTarget(alias, props) 
     else: # command
-      # TODO
-      fatal "Not implemented"
-      quit(10)
+      if prj.commands.hasKey(alias):
+        notice "Redefining existing command: " & alias
+        warn "Specify properties for command '$1':" % alias
+        props = prj.commands[alias]
+        for k, v in props.mpairs:
+          if ["_syntax", "_description"].contains(k):
+            let prop = addProperty(props, k)
+            props[prop.key] = prop.value
+          else:
+            let prop = addCommandDefinition(props, k)
+            props[prop.key] = prop.value
+        if confirm "Do you want to add/remove more command definitions?":
+          addCommandDefinitions(props)
+      else:
+        props["_syntax"] = addProperty(props, "_syntax").value
+        props["_description"] = addProperty(props, "_description").value
+        addCommandDefinitions(props)
+      prj.defCommand(alias, props)
   of "undef":
     if args.len < 3:
-      fatal "No target specified."
+      fatal "No alias specified."
       quit(3)
     let kind = args[1]
     let alias = args[2]
@@ -177,11 +211,13 @@ case args[0]:
         fatal "Target '$1' not defined." % [alias]
         quit(4)
       if force or confirm("Remove definition for target '$1'?" % alias):
-        prj.undef(alias) 
+        prj.undefTarget(alias) 
     else: # command
-      # TODO
-      fatal "Not implemented"
-      quit(10)
+      if not prj.commands.hasKey(alias):
+        fatal "Command '$1' not defined." % [alias]
+        quit(4)
+      if force or confirm("Remove definition for command '$1'?" % alias):
+        prj.undefCommand(alias) 
   of "info":
     prj.load
     if args.len < 2:

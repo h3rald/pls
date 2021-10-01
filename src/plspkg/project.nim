@@ -72,7 +72,7 @@ proc save*(prj: PlsProject) =
   o["targets"] = %prj.targets
   prj.configFile.writeFile(o.pretty)
 
-proc def*(prj: var PlsProject, alias: string, props: var JsonNode) =
+proc defTarget*(prj: var PlsProject, alias: string, props: var JsonNode) =
   for k, v in props.mpairs:
     if v == newJNull():
       props.delete(k)
@@ -90,11 +90,38 @@ proc def*(prj: var PlsProject, alias: string, props: var JsonNode) =
   prj.save
   notice "Target '$1' saved." % alias
 
-proc undef*(prj: var PlsProject, alias: string) =
+proc undefTarget*(prj: var PlsProject, alias: string) =
   prj.load
   prj.targets.delete(alias)
   prj.save
   notice "Target '$1' removed." % alias
+
+proc defCommand*(prj: var PlsProject, alias: string, props: var JsonNode) =
+  for k, v in props.mpairs:
+    if v == newJNull():
+      props.delete(k):
+    elif v.kind == JObject:
+      for kk, vv in v.pairs:
+        if vv == newJNull():
+          v.delete(kk)
+  prj.load
+  if not prj.commands.hasKey alias:
+    notice "Adding command '$1'..." % alias
+    prj.commands[alias] = newJObject()
+  else:
+    notice "Updating command '$1'..." % alias
+    prj.commands[alias] = newJObject()
+  for key, val in props.pairs:
+    prj.commands[alias][key] = val
+    notice "  $1: $2" % [key, $val]
+  prj.save
+  notice "Command '$1' saved." % alias
+
+proc undefCommand*(prj: var PlsProject, alias: string) =
+  prj.load
+  prj.commands.delete(alias)
+  prj.save
+  notice "Command '$1' removed." % alias
 
 proc lookupCommand(prj: PlsProject, command: string, props: seq[string], cmd: var JsonNode): bool =
   if not prj.commands.hasKey command:

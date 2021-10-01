@@ -12,11 +12,11 @@
     "_description": "Initializes a project in the current directory (using <storage-dir> as storage directory)."
   },
   "def": {
-    "_syntax": "def (command|target) <id>",
-    "_description": "Configures a new or existing command or target <id>."
+    "_syntax": "def (command|target) <alias>",
+    "_description": "Configures a new or existing command or target <alias>."
   },
   "undef": {
-    "_syntax": "undef (command|target) <id>",
-    "_description": "Unmaps the previously-mapped command or target <id>."
+    "_syntax": "undef (command|target) <alias>",
+    "_description": "Unmaps the previously-mapped command or target <alias>."
   }
 }
