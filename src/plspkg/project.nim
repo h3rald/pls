@@ -13,6 +13,9 @@ type
     targets*: JsonNode
     tasklists*: JsonNode
 
+
+type PlsError = ref object of ValueError 
+
 const plsTpl* = "pls.json".slurp
 const systemHelp = "help.json".slurp
 
@@ -112,11 +115,10 @@ proc lookupCommand(prj: PlsProject, command: string, props: seq[string], cmd: va
       cmd = val
   return score > 0
   
-proc execute*(prj: var PlsProject, command, alias: string): int =
+proc execute*(prj: var PlsProject, command, alias: string): int {.discardable.} =
   prj.load
   if not prj.targets.hasKey alias:
-    warn "Package definition '$1' not found within $2. Nothing to do." % [alias, prj.dir]
-    return
+    raise PlsError(msg: "Target definition '$1' not found. Nothing to do." % [alias])
   notice "$1: $2" % [command, alias]
   let target = prj.targets[alias]
   var keys = newSeq[string](0)
