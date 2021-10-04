@@ -5,7 +5,8 @@ import
   logging,
   algorithm,
   strutils,
-  sequtils
+  sequtils,
+  pegs
 
 import
   plspkg/plslogger
@@ -17,6 +18,15 @@ import
   plspkg/config,
   plspkg/project,
   plspkg/messaging
+
+let pegTaskDef = peg"""
+  def <- (id)('+' id)*
+  id  <- [$a-z0-9_][a-zA-Z0-9_-]+
+"""
+
+let pegPropName = peg"""
+  [a-z0-9_][a-zA-Z0-9_-]+
+"""
 
 let usage* = """  $1 v$2 - $3
   (c) 2021 $4
@@ -42,7 +52,13 @@ proc addProperty(parentObj: JsonNode, name = ""): tuple[key: string, value: Json
   var done = false
   while (not done):
     if name == "":
-      result.key = editValue("Name")
+      var ok = false
+      while not ok:
+        result.key = editValue("Name")
+        if not result.key.match(pegPropName):
+          warn "Property name contains invalid characters."
+        else:
+          ok = true
     elif name == "name":
       warn "Property identifier 'name' cannot be modified."
     else:
@@ -74,9 +90,15 @@ proc addProperties(obj: var JsonNode) =
 proc addTaskDefinition(parentObj: JsonNode, name = ""): tuple[key: string, value: JsonNode] =
   # TODO: validate name of task definition! (not $syntax or $description, etc.)
   if name == "":
-    result.key = editValue("Task Definition Matcher")
+    var ok = false
+    while not ok: 
+      result.key  = editValue("Task Definition")
+      if not result.key.match(pegTaskDef):
+        warn "Task definition contains invalid characters."
+      else:
+        ok = true
   else:
-    printValue(" Task Definition Matcher", name)
+    printValue(" Task Definition", name)
     result.key = name
   result.value = newJObject()
   result.value["cmd"] = addProperty(parentObj[name], "cmd").value

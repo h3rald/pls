@@ -1,5 +1,6 @@
 import
   os,
+  tables,
   json,
   logging,
   strutils,
@@ -15,11 +16,15 @@ type
 
 
 type PlsError = ref object of ValueError 
+type SystemTask = proc (params: string): void 
 
 const plsTpl* = "pls.json".slurp
 const systemHelp = "help.json".slurp
 
+let systemProps = @["$$os:$1" % hostOS, "$$cpu:$1" % hostCPU]
 let placeholder = peg"'{{' {[^}]+} '}}'"
+var systemTasks = initTable[string, SystemTask]()
+systemTasks["$setCurrentDir"] = proc (params: string) = setCurrentDir(params)
 
 proc newPlsProject*(dir: string): PlsProject =
   result.dir = dir
@@ -42,8 +47,7 @@ proc load*(prj: var PlsProject) =
   prj.version = cfg["version"].getInt
   prj.tasks = cfg["tasks"]
   prj.targets = cfg["targets"]
-  if cfg.hasKey("dir"):
-    prj.dir = cfg["dir"].getStr
+  # Set system properties
 
 proc help*(prj: var PlsProject): JsonNode =
   result = newJObject()
@@ -115,7 +119,8 @@ proc undefTask*(prj: var PlsProject, alias: string) =
   prj.save
   notice "Task '$1' removed." % alias
 
-proc lookupTask(prj: PlsProject, task: string, props: seq[string], cmd: var JsonNode): bool =
+proc lookupTask(prj: PlsProject, task: string, ps: seq[string], cmd: var JsonNode): bool =
+  let props = ps.concat(systemProps);
   if not prj.tasks.hasKey task:
     warn "Task '$1' not found" % task
     return
@@ -145,20 +150,16 @@ proc execute*(prj: var PlsProject, task, alias: string): int {.discardable.} =
     keys.add key
   var res: JsonNode
   var cmd: string
-  var pwd = prj.dir
-  if target.hasKey("dir"):
-    pwd = target["dir"].getStr
   if prj.lookupTask(task, keys, res):
     cmd = res["cmd"].getStr.replace(placeholder) do (m: int, n: int, c: openArray[string]) -> string:
       return target[c[0]].getStr
-    if res.hasKey("pwd"):
-      pwd = res["pwd"].getStr.replace(placeholder) do (m: int, n: int, c: openArray[string]) -> string:
-        return target[c[0]].getStr
-      pwd = prj.dir/pwd
     notice "Executing: $1" % cmd
-    pwd.createDir()
-    pwd.setCurrentDir()
-    result = execShellCmd cmd
+    if cmd[0] == '$':
+      let parts = cmd.split(" ")
+      if systemTasks.hasKey(parts[0]):
+        systemTasks[parts[0]](parts[1..parts.len-1].join(" "))
+      else:
+        result = execShellCmd cmd
   else:
     debug "Task '$1' not available for target '$2'" % [task, alias]
   setCurrentDir(prj.dir)

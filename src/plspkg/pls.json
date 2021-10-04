@@ -5,7 +5,7 @@
       "$syntax": "go <target>",
       "$description": "Goes to the folder identified by <target>.",
       "folder": {
-        "cmd": "cd \"{{folder}}\""
+        "cmd": "$setCurrentDir {{folder}}"
       }
     }
   },
