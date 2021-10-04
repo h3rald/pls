@@ -32,8 +32,8 @@ const program = "pls"
 const program_file = "src/pls.nim"
 const zip = "zip -X"
 
-proc shell(command, args: string, dest = "") =
-  exec command & " " & args & " " & dest
+proc shell(task, args: string, dest = "") =
+  exec task & " " & args & " " & dest
 
 proc filename_for(os: string, arch: string): string =
   return "pls" & "_v" & version & "_" & os & "_" & arch & ".zip"

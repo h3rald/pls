@@ -9,7 +9,7 @@ import
 type
   PlsProject* = object
     dir*: string
-    commands*: JsonNode
+    tasks*: JsonNode
     targets*: JsonNode
     tasklists*: JsonNode
 
@@ -39,25 +39,18 @@ proc load*(prj: var PlsProject) =
     fatal "Project not initialized - configuration file not found."
     quit(10)
   let cfg = prj.configFile.parseFile
-  prj.commands = cfg["commands"]
+  prj.tasks = cfg["tasks"]
   prj.targets = cfg["targets"]
   if cfg.hasKey("dir"):
     prj.dir = cfg["dir"].getStr
 
 proc help*(prj: var PlsProject): JsonNode =
-  result = systemHelp.parseJson
+  result = newJObject()
   if prj.configured:
     prj.load
-    for k, v in prj.tasklists.pairs:
-      let syntax = "$$$1" % k
-      let description = "Executes: $1" % v.elems.mapIt(it.getStr).join(", ")
-      result["$"&k] = ("""
-        {
-          "_syntax": "$1",
-          "_description": "$2"
-        }
-      """ % [syntax, description]).parseJson  
-    for k, v in prj.commands.pairs:
+    for k, v in systemHelp.parseJson.pairs:
+      result[k] = v
+    for k, v in prj.tasks.pairs:
       if v.hasKey("_syntax") and v.hasKey("_description"):
         result[k] = ("""
           {
@@ -68,7 +61,7 @@ proc help*(prj: var PlsProject): JsonNode =
 
 proc save*(prj: PlsProject) = 
   var o = newJObject()
-  o["commands"] = %prj.commands
+  o["tasks"] = %prj.tasks
   o["targets"] = %prj.targets
   prj.configFile.writeFile(o.pretty)
 
@@ -96,7 +89,7 @@ proc undefTarget*(prj: var PlsProject, alias: string) =
   prj.save
   notice "Target '$1' removed." % alias
 
-proc defCommand*(prj: var PlsProject, alias: string, props: var JsonNode) =
+proc defTask*(prj: var PlsProject, alias: string, props: var JsonNode) =
   for k, v in props.mpairs:
     if v == newJNull():
       props.delete(k):
@@ -105,31 +98,31 @@ proc defCommand*(prj: var PlsProject, alias: string, props: var JsonNode) =
         if vv == newJNull():
           v.delete(kk)
   prj.load
-  if not prj.commands.hasKey alias:
-    notice "Adding command '$1'..." % alias
-    prj.commands[alias] = newJObject()
+  if not prj.tasks.hasKey alias:
+    notice "Adding task '$1'..." % alias
+    prj.tasks[alias] = newJObject()
   else:
-    notice "Updating command '$1'..." % alias
-    prj.commands[alias] = newJObject()
+    notice "Updating task '$1'..." % alias
+    prj.tasks[alias] = newJObject()
   for key, val in props.pairs:
-    prj.commands[alias][key] = val
+    prj.tasks[alias][key] = val
     notice "  $1: $2" % [key, $val]
   prj.save
-  notice "Command '$1' saved." % alias
+  notice "Task '$1' saved." % alias
 
-proc undefCommand*(prj: var PlsProject, alias: string) =
+proc undefTask*(prj: var PlsProject, alias: string) =
   prj.load
-  prj.commands.delete(alias)
+  prj.tasks.delete(alias)
   prj.save
-  notice "Command '$1' removed." % alias
+  notice "Task '$1' removed." % alias
 
-proc lookupCommand(prj: PlsProject, command: string, props: seq[string], cmd: var JsonNode): bool =
-  if not prj.commands.hasKey command:
-    warn "Command '$1' not found" % command
+proc lookupTask(prj: PlsProject, task: string, props: seq[string], cmd: var JsonNode): bool =
+  if not prj.tasks.hasKey task:
+    warn "Task '$1' not found" % task
     return
-  var cmds = prj.commands[command]
+  var cmds = prj.tasks[task]
   var score = 0
-  # Cycle through command definitions
+  # Cycle through task definitions
   for key, val in cmds:
     if key == "_syntax" or key == "_description":
       continue
@@ -142,11 +135,11 @@ proc lookupCommand(prj: PlsProject, command: string, props: seq[string], cmd: va
       cmd = val
   return score > 0
   
-proc execute*(prj: var PlsProject, command, alias: string): int {.discardable.} =
+proc execute*(prj: var PlsProject, task, alias: string): int {.discardable.} =
   prj.load
   if not prj.targets.hasKey alias:
     raise PlsError(msg: "Target definition '$1' not found. Nothing to do." % [alias])
-  notice "$1: $2" % [command, alias]
+  notice "$1: $2" % [task, alias]
   let target = prj.targets[alias]
   var keys = newSeq[string](0)
   for key, val in target.pairs:
@@ -156,7 +149,7 @@ proc execute*(prj: var PlsProject, command, alias: string): int {.discardable.} 
   var pwd = prj.dir
   if target.hasKey("dir"):
     pwd = target["dir"].getStr
-  if prj.lookupCommand(command, keys, res):
+  if prj.lookupTask(task, keys, res):
     cmd = res["cmd"].getStr.replace(placeholder) do (m: int, n: int, c: openArray[string]) -> string:
       return target[c[0]].getStr
     if res.hasKey("pwd"):
@@ -168,14 +161,14 @@ proc execute*(prj: var PlsProject, command, alias: string): int {.discardable.} 
     pwd.setCurrentDir()
     result = execShellCmd cmd
   else:
-    debug "Command '$1' not available for target '$2'" % [command, alias]
+    debug "Task '$1' not available for target '$2'" % [task, alias]
   setCurrentDir(prj.dir)
 
-proc executeRec*(prj: var PlsProject, command, alias: string) =
+proc executeRec*(prj: var PlsProject, task, alias: string) =
   prj.load
   let pwd = getCurrentDir()
   var dir = alias
-  if (execute(prj, command, alias) != 0):
+  if (execute(prj, task, alias) != 0):
     return
   if prj.targets[alias].hasKey("dir"):
     dir = prj.targets[alias]["dir"].getStr
@@ -184,5 +177,5 @@ proc executeRec*(prj: var PlsProject, command, alias: string) =
     childProj.load()
     setCurrentDir(childProj.dir)
     for key, val in childProj.targets.pairs:
-      childProj.executeRec(command, key)
+      childProj.executeRec(task, key)
     setCurrentDir(pwd)
