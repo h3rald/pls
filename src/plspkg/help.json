@@ -6,13 +6,5 @@
   "info": {
     "$syntax": "info [<target>]",
     "$description": "Displays information on <target> (or all targets)."
-  },
-  "def": {
-    "$syntax": "def (task|target) <id>",
-    "$description": "Configures a new or existing task or target <id>."
-  },
-  "undef": {
-    "$syntax": "undef (task|target) <id>",
-    "$description": "Unmaps the previously-mapped task or target <id>."
   }
 }
