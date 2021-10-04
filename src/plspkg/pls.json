@@ -1,11 +1,17 @@
 {
-  "version": 1633326634,
+  "version": 1633338269,
   "tasks": {
     "go": {
       "$syntax": "go <target>",
       "$description": "Goes to the folder identified by <target>.",
-      "folder": {
-        "cmd": "$setCurrentDir {{folder}}"
+      "$os:windows+folder": {
+        "cmd": "call cmd /k cd \"{{folder}}\""
+      },
+      "$os:linux+folder": {
+        "cmd": "cd \"{{folder}}\" && bash --login"
+      },
+      "$os:macos+folder": {
+        "cmd": "cd \"{{folder}}\" && bash --login"
       }
     }
   },
