@@ -1,6 +1,5 @@
 import
   os,
-  tables,
   json,
   logging,
   strutils,
@@ -16,15 +15,12 @@ type
 
 
 type PlsError = ref object of ValueError 
-type SystemTask = proc (params: string): void 
 
 const plsTpl* = "pls.json".slurp
 const systemHelp = "help.json".slurp
 
 let systemProps = @["$$os:$1" % hostOS, "$$cpu:$1" % hostCPU]
 let placeholder = peg"'{{' {[^}]+} '}}'"
-var systemTasks = initTable[string, SystemTask]()
-systemTasks["$setCurrentDir"] = proc (params: string) = setCurrentDir(params)
 
 proc newPlsProject*(dir: string): PlsProject =
   result.dir = dir
@@ -47,7 +43,6 @@ proc load*(prj: var PlsProject) =
   prj.version = cfg["version"].getInt
   prj.tasks = cfg["tasks"]
   prj.targets = cfg["targets"]
-  # Set system properties
 
 proc help*(prj: var PlsProject): JsonNode =
   result = newJObject()
@@ -143,7 +138,6 @@ proc execute*(prj: var PlsProject, task, alias: string): int {.discardable.} =
   prj.load
   if not prj.targets.hasKey alias:
     raise PlsError(msg: "Target definition '$1' not found. Nothing to do." % [alias])
-  notice "$1: $2" % [task, alias]
   let target = prj.targets[alias]
   var keys = newSeq[string](0)
   for key, val in target.pairs:
@@ -154,12 +148,7 @@ proc execute*(prj: var PlsProject, task, alias: string): int {.discardable.} =
     cmd = res["cmd"].getStr.replace(placeholder) do (m: int, n: int, c: openArray[string]) -> string:
       return target[c[0]].getStr
     notice "Executing: $1" % cmd
-    if cmd[0] == '$':
-      let parts = cmd.split(" ")
-      if systemTasks.hasKey(parts[0]):
-        systemTasks[parts[0]](parts[1..parts.len-1].join(" "))
-      else:
-        result = execShellCmd cmd
+    result = execShellCmd cmd
   else:
     debug "Task '$1' not available for target '$2'" % [task, alias]
   setCurrentDir(prj.dir)
