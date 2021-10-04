@@ -8,10 +8,10 @@ import
 
 type
   PlsProject* = object
+    version*: int
     dir*: string
     tasks*: JsonNode
     targets*: JsonNode
-    tasklists*: JsonNode
 
 
 type PlsError = ref object of ValueError 
@@ -39,6 +39,7 @@ proc load*(prj: var PlsProject) =
     fatal "Project not initialized - configuration file not found."
     quit(10)
   let cfg = prj.configFile.parseFile
+  prj.version = cfg["version"].getInt
   prj.tasks = cfg["tasks"]
   prj.targets = cfg["targets"]
   if cfg.hasKey("dir"):
@@ -51,16 +52,17 @@ proc help*(prj: var PlsProject): JsonNode =
     for k, v in systemHelp.parseJson.pairs:
       result[k] = v
     for k, v in prj.tasks.pairs:
-      if v.hasKey("_syntax") and v.hasKey("_description"):
+      if v.hasKey("$syntax") and v.hasKey("$description"):
         result[k] = ("""
           {
-            "_syntax": "$1",
-            "_description": "$2"
+            "$$syntax": "$1",
+            "$$description": "$2"
           }
-        """ % [v["_syntax"].getStr, v["_description"].getStr]).parseJson
+        """ % [v["$syntax"].getStr, v["$description"].getStr]).parseJson
 
 proc save*(prj: PlsProject) = 
   var o = newJObject()
+  o["version"] = %prj.version
   o["tasks"] = %prj.tasks
   o["targets"] = %prj.targets
   prj.configFile.writeFile(o.pretty)
@@ -69,7 +71,6 @@ proc defTarget*(prj: var PlsProject, alias: string, props: var JsonNode) =
   for k, v in props.mpairs:
     if v == newJNull():
       props.delete(k)
-  prj.load
   if not prj.targets.hasKey alias:
     notice "Adding target '$1'..." % alias
     prj.targets[alias] = newJObject()
@@ -84,7 +85,6 @@ proc defTarget*(prj: var PlsProject, alias: string, props: var JsonNode) =
   notice "Target '$1' saved." % alias
 
 proc undefTarget*(prj: var PlsProject, alias: string) =
-  prj.load
   prj.targets.delete(alias)
   prj.save
   notice "Target '$1' removed." % alias
@@ -97,7 +97,6 @@ proc defTask*(prj: var PlsProject, alias: string, props: var JsonNode) =
       for kk, vv in v.pairs:
         if vv == newJNull():
           v.delete(kk)
-  prj.load
   if not prj.tasks.hasKey alias:
     notice "Adding task '$1'..." % alias
     prj.tasks[alias] = newJObject()
@@ -124,7 +123,7 @@ proc lookupTask(prj: PlsProject, task: string, props: seq[string], cmd: var Json
   var score = 0
   # Cycle through task definitions
   for key, val in cmds:
-    if key == "_syntax" or key == "_description":
+    if key == "$syntax" or key == "$description":
       continue
     var params = key.split("+")
     # Check if all params are available
@@ -163,19 +162,3 @@ proc execute*(prj: var PlsProject, task, alias: string): int {.discardable.} =
   else:
     debug "Task '$1' not available for target '$2'" % [task, alias]
   setCurrentDir(prj.dir)
-
-proc executeRec*(prj: var PlsProject, task, alias: string) =
-  prj.load
-  let pwd = getCurrentDir()
-  var dir = alias
-  if (execute(prj, task, alias) != 0):
-    return
-  if prj.targets[alias].hasKey("dir"):
-    dir = prj.targets[alias]["dir"].getStr
-  var childProj = newPlsProject(pwd/prj.dir/dir)
-  if childProj.configured:
-    childProj.load()
-    setCurrentDir(childProj.dir)
-    for key, val in childProj.targets.pairs:
-      childProj.executeRec(task, key)
-    setCurrentDir(pwd)

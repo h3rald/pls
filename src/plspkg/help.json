@@ -1,22 +1,18 @@
 {
   "help": {
-    "_syntax": "help [<task>]",
-    "_description": "Display help on the specified task (or all tasks)."
+    "$syntax": "help [<task>]",
+    "$description": "Display help on the specified task (or all tasks)."
   },
   "info": {
-    "_syntax": "info [<target>]",
-    "_description": "Displays information on <target> (or all targets)."
-  },
-  "init": {
-    "_syntax": "init",
-    "_description": "Initializes a project in the current directory."
+    "$syntax": "info [<target>]",
+    "$description": "Displays information on <target> (or all targets)."
   },
   "def": {
-    "_syntax": "def (task|target) <alias>",
-    "_description": "Configures a new or existing task or target <alias>."
+    "$syntax": "def (task|target) <id>",
+    "$description": "Configures a new or existing task or target <id>."
   },
   "undef": {
-    "_syntax": "undef (task|target) <alias>",
-    "_description": "Unmaps the previously-mapped task or target <alias>."
+    "$syntax": "undef (task|target) <id>",
+    "$description": "Unmaps the previously-mapped task or target <id>."
   }
 }
