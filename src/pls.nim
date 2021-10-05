@@ -12,20 +12,22 @@ import
 type ConfigParseError = ref object of ValueError
 type RuntimeError = ref object of ValueError
 
-let USAGE* = """  $1 v$2 - $3
-  (c) 2021 $4
+let USAGE* = """$1 v$2 - $3
+(c) 2021 $4
 
-  Usage:
-    pls <action> [<thing>]           Executes <action> (on <thing>).
+Usage:
+  pls <action> [<thing>]           Executes <action> (on <thing>).
 
-  Options:
-    --help,    -h           Displays this message.
-    --actions, -a           Display all known actions.
-    --things,  -t           Display all known things.
-    --version, -v           Displays the version of the application.
+Options:
+  --help,    -h           Displays this message.
+  --actions, -a           Display all known actions.
+  --things,  -t           Display all known things.
+  --version, -v           Displays the version of the application.
 """ % [pkgTitle, pkgVersion, pkgDescription, pkgAuthor]
 
 let placeholder = peg"'{{' {[^}]+} '}}'"
+let id = peg"^[a-z0-9][a-zA-Z0-9._-]+$"
+let def = peg"^[a-z0-9][a-zA-Z0-9._-]+ ('+' [a-z0-9][a-zA-Z0-9._-]+)*$"
 
 var DATA = newTable[string, TableRef[string, TableRef[string, string]]]()
 DATA["actions"] = newTable[string, TableRef[string, string]]()
@@ -55,8 +57,6 @@ proc parseProperty(line: string, index: int): tuple[name: string, value: string]
   result.value = parts[1..parts.len-1].join(":").strip
 
 proc load(cfg: string): void =
-  var actions = false
-  var things = false
   var section = ""
   var itemId = ""
   var indent = 0
@@ -65,31 +65,49 @@ proc load(cfg: string): void =
     count += 1
     if l.startsWith("    "):
       var line = l.strip
+      var obj = ""
       if line.len == 0:
         raise ConfigParseError(msg: "Line $1 - Invalid empty line within item." % $count)
       if line[0] == '#':
         # comment
         continue
-      if not (things or actions) or indent == 0:
-        raise ConfigParseError(msg: "Line $1 - Invalid property indentation." % $count)
+      if section == "actions":
+        obj = "action ID"
+      if section == "things":
+        obj = "property name"
+      if l.strip(true, false).len < l.strip(false, true).len-4:
+        raise ConfigParseError(msg: "Line $1 - Invalid $2 indentation, expected 4 spaces." % [$count, obj])
+      if section == "" or indent == 0:
+        raise ConfigParseError(msg: "Line $1 - Invalid $2 indentation." % [$count, obj])
       if itemId == "":
-        raise ConfigParseError(msg: "Line $1 - Invalid property indentation (not within an item)." % $count)
+        raise ConfigParseError(msg: "Line $1 - Invalid $2 indentation (not within an item)." % [$count, obj])
       let p = parseProperty(line, count)
+      if (section == "actions" and not p.name.match(def)) or (section == "things" and not p.name.match(id)):
+        raise ConfigParseError(msg: "Line $1 - Invalid $2 '$3'" % [$count, obj, p.name])
       DATA[section][itemId][p.name] = p.value
       indent = 4
       continue
     if l.startsWith("  "):
       var line = l.strip
+      var obj = ""
       if line.len == 0:
         raise ConfigParseError(msg: "Line $1 - Invalid empty line within section." % $count)
       if line[0] == '#':
         # comment
         continue
-      if not (things or actions):
-        raise ConfigParseError(msg: "Line $1 - Invalid item indentation." % $count)
+      if section == "actions":
+        obj = "action"
+      if section == "things":
+        obj = "thing"
+      if l.strip(true, false).len < l.strip(false, true).len-2:
+        raise ConfigParseError(msg: "Line $1 - Invalid $2 indentationn, expected 2 spaces." % [$count, obj])
+      if section == "":
+        raise ConfigParseError(msg: "Line $1 - Invalid $2 indentation." % [$count, obj])
       if line[line.len-1] != ':' or line == ":":
-        raise ConfigParseError(msg: "Line $1 - Invalid item identifier." % $count)
+        raise ConfigParseError(msg: "Line $1 - Invalid $2 identifier." % [$count, obj])
       itemId = line[0..line.len-2]
+      if not itemId.match(id):
+        raise ConfigParseError(msg: "Line $1 - Invalid $2 identifier '$3'." % [$count, obj, itemId])
       # Start new item
       DATA[section][itemId] = newTable[string, string]()
       indent = 2
@@ -98,15 +116,13 @@ proc load(cfg: string): void =
       itemId = ""
       continue
     if l == "actions:":
-      if actions:
+      if section == "actions":
         raise ConfigParseError(msg: "Line $1 - Duplicated 'actions' section." % $count)
-      actions = true
       section = "actions"
       continue
     if l == "things:":
-      if things:
+      if section == "things":
         raise ConfigParseError(msg: "Line $1 - Duplicated 'things' section." % $count)
-      things = true
       section = "things"
       continue
     if l.strip.startsWith("#"):
@@ -156,6 +172,7 @@ try:
   CONFIG.load()
 except:
   echo "(!) Unable to parse pls.yml file: $1" % getCurrentExceptionMsg()
+  quit(1)
 
 var args = newSeq[string](0)
 
@@ -193,7 +210,7 @@ if args.len == 0:
   quit(0)
 elif args.len < 1:
   echo USAGE
-  quit(1)
+  quit(0)
 elif args.len < 2:
   if DATA["things"].len == 0:
     echo "(!) No targets defined - nothing to do."
