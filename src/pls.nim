@@ -189,7 +189,6 @@ proc execute*(action, thing: string): int {.discardable.} =
   if cmd != "":
     cmd = cmd.replace(PEG_PLACEHOLDER) do (m: int, n: int, c: openArray[string]) -> string:
       return resolvePlaceholder(c[0], thing)
-    echo "\n[pls]-> $1\n" % cmd
     result = execShellCmd cmd
 
 ### MAIN ###
