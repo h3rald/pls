@@ -24,6 +24,8 @@ Options:
                            <query> can contain start and/or leading * for simple searches.
   --things,  -t[:<query>]  Displays all known things, optionally matching <query>
                            <query> can contain start and/or leading * for simple searches.
+  --full,    -f            If -a or -t are specified, display all properties for each
+                           action or thing.
   --version, -v            Displays the version of the application.
 """ % [pkgTitle, pkgVersion, pkgDescription, pkgAuthor]
 
@@ -45,9 +47,6 @@ things:
   # Define things here
 """
 
-# The pls command arguments.
-var ARGS = newSeq[string]()
-
 # The path to the pls.yml configuration file.
 var CONFIG_FILE: string
 
@@ -55,6 +54,12 @@ if defined(windows):
   CONFIG_FILE = getenv("USERPROFILE") / "pls.yml"
 else:
   CONFIG_FILE = getenv("HOME") / "pls.yml"
+
+# Argument/option management
+var ARGS = newSeq[string]()
+var OPT_FULL = false
+var OPT_SHOW = ""
+var OPT_SHOW_QUERY = ""
 
 ### Helper Methods ##
 
@@ -186,7 +191,7 @@ proc execute*(action, thing: string): int {.discardable.} =
       return resolvePlaceholder(c[0], thing)
     result = execShellCmd cmd
 
-proc show*(t, query=""): void =
+proc show*(t, query="", full = false): void =
   var endsWith = false
   var startsWith = false
   var contains = false
@@ -211,10 +216,12 @@ proc show*(t, query=""): void =
   for s, props in DATA[t].pairs:
     if not s.filter():
       continue
-    echo "\n$1:" % s
-    for key, val in props.pairs:
-      echo "  $1: $2" % [key, val]
-
+    if OPT_FULL:
+      echo "\n$1:" % s
+      for key, val in props.pairs:
+        echo "  $1: $2" % [key, val]
+    else:
+      echo "- $1" % s
 
 ### MAIN ###
 
@@ -239,20 +246,26 @@ for kind, key, val in getopt():
         of "version", "v":
           echo pkgVersion
           quit(0)
+        of "full", "f":
+          OPT_FULL = true
         of "actions", "a":
-          show("actions", val)
-          quit(0)
+          OPT_SHOW = "actions"
+          OPT_SHOW_QUERY = val
         of "things", "t":
-          show("things", val)
-          quit(0)
+          OPT_SHOW = "things"
+          OPT_SHOW_QUERY = val
         else:
           discard
     else:
       discard
 
 if ARGS.len < 1:
-  echo USAGE
-  quit(0)
+  if OPT_SHOW != "":
+    show(OPT_SHOW, OPT_SHOW_QUERY, OPT_FULL)
+    quit(0)
+  else:
+    echo USAGE
+    quit(0)
 elif ARGS.len < 2:
   if DATA["things"].len == 0:
     echo "(!) No targets defined - nothing to do."
