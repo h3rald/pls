@@ -3,7 +3,7 @@ from sequtils import all
 from pegs     import peg, match, replace
 from os       import getenv, fileExists, execShellCmd, `/`
 from parseopt import getopt, cmdLongOption, cmdShortOption, cmdArgument
-from strutils import `%`, split, strip, join, startsWith
+from strutils import `%`, split, strip, join, startsWith, endsWith, replace, contains
 from tables   import newTable, TableRef, `[]=`, `[]`, hasKey, pairs, len, keys
 
 import
@@ -16,13 +16,15 @@ let USAGE* = """$1 v$2 - $3
 (c) 2021 $4
 
 Usage:
-  pls <action> [<thing>]      Executes <action> (on <thing>).
+  pls <action> [<thing>]   Executes <action> (on <thing>).
 
 Options:
-  --help,    -h               Displays this message.
-  --actions, -a               Displays all known actions.
-  --things,  -t               Displays all known things.
-  --version, -v               Displays the version of the application.
+  --help,    -h            Displays this message.
+  --actions, -a[:<query>]  Displays all known actions, optionally matching <query>.
+                           <query> can contain start and/or leading * for simple searches.
+  --things,  -t[:<query>]  Displays all known things, optionally matching <query>
+                           <query> can contain start and/or leading * for simple searches.
+  --version, -v            Displays the version of the application.
 """ % [pkgTitle, pkgVersion, pkgDescription, pkgAuthor]
 
 # PEG strings used when parsing the configuration file.
@@ -45,9 +47,6 @@ things:
 
 # The pls command arguments.
 var ARGS = newSeq[string]()
-
-# The stack of the properties accessed during placeholder lookup, used to avoid endless recursion.
-var PROPERTY_LOOKUP_STACK = newSeq[string]()
 
 # The path to the pls.yml configuration file.
 var CONFIG_FILE: string
@@ -170,10 +169,6 @@ proc resolvePlaceholder(ident, initialThing: string): string =
     raise RuntimeError(msg: "Unable to access thing '$1' in placeholder '$2'." % [thing, ident])
   if not DATA["things"][thing].hasKey(id):
     raise RuntimeError(msg: "Unable to access property '$1' in thing '$2' within placeholder '$3'." % [id, thing, ident])
-  let path = "$1.$2" % [thing, id]
-  if PROPERTY_LOOKUP_STACK.contains(path):
-    raise RuntimeError(msg: "Circular reference on property '$1'" % path)
-  PROPERTY_LOOKUP_STACK.add(path)
   result = DATA["things"][thing][id]
   result = result.replace(PEG_PLACEHOLDER) do (m: int, n: int, c: openArray[string]) -> string:
     return resolvePlaceholder(c[0], thing) 
@@ -190,6 +185,36 @@ proc execute*(action, thing: string): int {.discardable.} =
     cmd = cmd.replace(PEG_PLACEHOLDER) do (m: int, n: int, c: openArray[string]) -> string:
       return resolvePlaceholder(c[0], thing)
     result = execShellCmd cmd
+
+proc show*(t, query=""): void =
+  var endsWith = false
+  var startsWith = false
+  var contains = false
+  if query.endsWith("*"):
+    startsWith = true
+  if query.startsWith("*"):
+    endsWith = true
+  if startsWith and endsWith:
+    contains = true
+  let  q = query.replace("*", "")
+  let filter = proc (str: string): bool =
+    if contains:
+      return str.contains(q)
+    elif endsWith:
+      return str.endsWith(q)
+    elif startsWith:
+      return str.startsWith(q)
+    elif q.len == 0:
+      return true
+    else:
+      return str == q
+  for s, props in DATA[t].pairs:
+    if not s.filter():
+      continue
+    echo "\n$1:" % s
+    for key, val in props.pairs:
+      echo "  $1: $2" % [key, val]
+
 
 ### MAIN ###
 
@@ -215,26 +240,17 @@ for kind, key, val in getopt():
           echo pkgVersion
           quit(0)
         of "actions", "a":
-          for action, props in DATA["actions"].pairs:
-            echo "\n$1:" % action
-            for key, val in props.pairs:
-              echo "  $1: $2" % [key, val]
+          show("actions", val)
           quit(0)
         of "things", "t":
-          for thing, props in DATA["things"].pairs:
-            echo "\n$1:" % thing
-            for key, val in props.pairs:
-              echo "  $1: $2" % [key, val]
+          show("things", val)
           quit(0)
         else:
           discard
     else:
       discard
 
-if ARGS.len == 0:
-  echo USAGE 
-  quit(0)
-elif ARGS.len < 1:
+if ARGS.len < 1:
   echo USAGE
   quit(0)
 elif ARGS.len < 2:
