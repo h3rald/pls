@@ -98,6 +98,8 @@ proc parseConfig(cfg: string): void =
       let p = parseProperty(line, count)
       if (section == "actions" and not p.name.match(PEG_DEF)) or (section == "things" and not p.name.match(PEG_ID)):
         raise ConfigParseError(msg: "Line $1 - Invalid $2 '$3'" % [$count, obj, p.name])
+      if DATA[section][itemId].hasKey(p.name):
+        raise ConfigParseError(msg: "Line $1 - Duplicate property '$2'" % [$count, p.name])
       DATA[section][itemId][p.name] = p.value
       indent = 4
       continue
@@ -122,6 +124,8 @@ proc parseConfig(cfg: string): void =
       itemId = line[0..line.len-2]
       if not itemId.match(PEG_ID):
         raise ConfigParseError(msg: "Line $1 - Invalid $2 identifier '$3'." % [$count, obj, itemId])
+      if DATA[section].hasKey(itemId):
+        raise ConfigParseError(msg: "Line $1 - Duplicate item '$2'" % [$count, itemId])
       # Start new item
       DATA[section][itemId] = newTable[string, string]()
       indent = 2
