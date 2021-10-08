@@ -25,7 +25,7 @@ Options:
   --version, -v           Displays the version of the application.
 """ % [pkgTitle, pkgVersion, pkgDescription, pkgAuthor]
 
-let placeholder = peg"'{{' {[^}]+} '}}'"
+let placeholder = peg"'{{' {[a-zA-Z0-9._-]+} '}}'"
 let id = peg"^[a-z0-9][a-zA-Z0-9._-]+$"
 let def = peg"^[a-z0-9][a-zA-Z0-9._-]+ ('+' [a-z0-9][a-zA-Z0-9._-]+)*$"
 
@@ -52,7 +52,7 @@ else:
 proc parseProperty(line: string, index: int): tuple[name: string, value: string] =
   let parts = line.split(":")
   if parts.len < 2:
-    raise ConfigParseError(msg: "Line $1 - Invalid property.")
+    raise ConfigParseError(msg: "Line $1 - Invalid property." % $index)
   result.name = parts[0].strip
   result.value = parts[1..parts.len-1].join(":").strip
 
@@ -147,6 +147,23 @@ proc lookupTask(action: string, props: seq[string]): string =
       score = params.len
       result = val
 
+proc resolvePlaceholder(ident, initialThing: string): string = 
+  var id = ident
+  var thing = initialThing
+  let parts = id.split(".")
+  if parts.len > 2:
+    raise RuntimeError(msg: "Invalid placeholder '$1'." % id)
+  elif parts.len == 2:
+    thing = parts[0]
+    id = parts[1]
+  if not DATA["things"].hasKey(thing):
+    raise RuntimeError(msg: "Unable to access thing '$1' in placeholder '$2'." % [thing, ident])
+  if not DATA["things"][thing].hasKey(id):
+    raise RuntimeError(msg: "Unable to access property '$1' in thing '$2' within placeholder '$3'." % [id, thing, ident])
+  result = DATA["things"][thing][id]
+  result = result.replace(placeholder) do (m: int, n: int, c: openArray[string]) -> string:
+    return resolvePlaceholder(c[0], thing) 
+
 proc execute*(action, thing: string): int {.discardable.} =
   if not DATA["things"].hasKey(thing):
     raise RuntimeError(msg: "Thing '$1' not found. Nothing to do." % thing)
@@ -157,11 +174,9 @@ proc execute*(action, thing: string): int {.discardable.} =
   var cmd = lookupTask(action, keys)
   if cmd != "":
     cmd = cmd.replace(placeholder) do (m: int, n: int, c: openArray[string]) -> string:
-      return props[c[0]]
-    echo "Executing: $1" % cmd
+      return resolvePlaceholder(c[0], thing)
+    echo "\n[pls]-> $1\n" % cmd
     result = execShellCmd cmd
-  else:
-    echo "Action '$1' not available for thing '$2'" % [action, thing]
 
 ### MAIN ###
 
