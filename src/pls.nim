@@ -1,10 +1,10 @@
-import 
-  os,
-  parseopt,
-  strutils,
-  sequtils,
-  pegs,
-  tables
+
+from sequtils import all
+from pegs     import peg, match, replace
+from os       import getenv, fileExists, execShellCmd, `/`
+from parseopt import getopt, cmdLongOption, cmdShortOption, cmdArgument
+from strutils import `%`, split, strip, join, startsWith
+from tables   import newTable, TableRef, `[]=`, `[]`, hasKey, pairs, len, keys
 
 import
   plspkg/config
@@ -16,38 +16,48 @@ let USAGE* = """$1 v$2 - $3
 (c) 2021 $4
 
 Usage:
-  pls <action> [<thing>]           Executes <action> (on <thing>).
+  pls <action> [<thing>]      Executes <action> (on <thing>).
 
 Options:
-  --help,    -h           Displays this message.
-  --actions, -a           Display all known actions.
-  --things,  -t           Display all known things.
-  --version, -v           Displays the version of the application.
+  --help,    -h               Displays this message.
+  --actions, -a               Displays all known actions.
+  --things,  -t               Displays all known things.
+  --version, -v               Displays the version of the application.
 """ % [pkgTitle, pkgVersion, pkgDescription, pkgAuthor]
 
-let placeholder = peg"'{{' {[a-zA-Z0-9._-]+} '}}'"
-let id = peg"^[a-z0-9][a-zA-Z0-9._-]+$"
-let def = peg"^[a-z0-9][a-zA-Z0-9._-]+ ('+' [a-z0-9][a-zA-Z0-9._-]+)*$"
+# PEG strings used when parsing the configuration file.
+let PEG_PLACEHOLDER* = peg"'{{' {[a-zA-Z0-9._-]+} '}}'"
+let PEG_ID* = peg"^[a-z0-9][a-zA-Z0-9._-]+$"
+let PEG_DEF* = peg"^[a-z0-9][a-zA-Z0-9._-]+ ('+' [a-z0-9][a-zA-Z0-9._-]+)*$"
 
-var DATA = newTable[string, TableRef[string, TableRef[string, string]]]()
+# Hash containing all the actions and things saved in the configuration file.
+var DATA* = newTable[string, TableRef[string, TableRef[string, string]]]()
 DATA["actions"] = newTable[string, TableRef[string, string]]()
 DATA["things"] = newTable[string, TableRef[string, string]]()
 
-const defaultConfig = """
+# Default configuration file, saved if no pls.yml is present on the system.
+const DEFAULT_CFG = """
 actions:
   # Define actions here
 things:
   # Define things here
 """
 
-var CONFIG: string
+# The pls command arguments.
+var ARGS = newSeq[string]()
+
+# The stack of the properties accessed during placeholder lookup, used to avoid endless recursion.
+var PROPERTY_LOOKUP_STACK = newSeq[string]()
+
+# The path to the pls.yml configuration file.
+var CONFIG_FILE: string
 
 if defined(windows):
-  CONFIG = getenv("USERPROFILE") / "pls.yml"
+  CONFIG_FILE = getenv("USERPROFILE") / "pls.yml"
 else:
-  CONFIG = getenv("HOME") / "pls.yml"
+  CONFIG_FILE = getenv("HOME") / "pls.yml"
 
-# Helper Methods
+### Helper Methods ##
 
 proc parseProperty(line: string, index: int): tuple[name: string, value: string] =
   let parts = line.split(":")
@@ -56,7 +66,7 @@ proc parseProperty(line: string, index: int): tuple[name: string, value: string]
   result.name = parts[0].strip
   result.value = parts[1..parts.len-1].join(":").strip
 
-proc load(cfg: string): void =
+proc parseConfig(cfg: string): void =
   var section = ""
   var itemId = ""
   var indent = 0
@@ -82,7 +92,7 @@ proc load(cfg: string): void =
       if itemId == "":
         raise ConfigParseError(msg: "Line $1 - Invalid $2 indentation (not within an item)." % [$count, obj])
       let p = parseProperty(line, count)
-      if (section == "actions" and not p.name.match(def)) or (section == "things" and not p.name.match(id)):
+      if (section == "actions" and not p.name.match(PEG_DEF)) or (section == "things" and not p.name.match(PEG_ID)):
         raise ConfigParseError(msg: "Line $1 - Invalid $2 '$3'" % [$count, obj, p.name])
       DATA[section][itemId][p.name] = p.value
       indent = 4
@@ -106,7 +116,7 @@ proc load(cfg: string): void =
       if line[line.len-1] != ':' or line == ":":
         raise ConfigParseError(msg: "Line $1 - Invalid $2 identifier." % [$count, obj])
       itemId = line[0..line.len-2]
-      if not itemId.match(id):
+      if not itemId.match(PEG_ID):
         raise ConfigParseError(msg: "Line $1 - Invalid $2 identifier '$3'." % [$count, obj, itemId])
       # Start new item
       DATA[section][itemId] = newTable[string, string]()
@@ -131,7 +141,7 @@ proc load(cfg: string): void =
     else:
       raise ConfigParseError(msg: "Line $1 - Invalid line." % $count)
 
-proc lookupTask(action: string, props: seq[string]): string =
+proc lookupActionDef(action: string, props: seq[string]): string =
   result = ""
   if not DATA["actions"].hasKey(action):
     raise RuntimeError(msg: "Action '$1' not found" % action)
@@ -160,8 +170,12 @@ proc resolvePlaceholder(ident, initialThing: string): string =
     raise RuntimeError(msg: "Unable to access thing '$1' in placeholder '$2'." % [thing, ident])
   if not DATA["things"][thing].hasKey(id):
     raise RuntimeError(msg: "Unable to access property '$1' in thing '$2' within placeholder '$3'." % [id, thing, ident])
+  let path = "$1.$2" % [thing, id]
+  if PROPERTY_LOOKUP_STACK.contains(path):
+    raise RuntimeError(msg: "Circular reference on property '$1'" % path)
+  PROPERTY_LOOKUP_STACK.add(path)
   result = DATA["things"][thing][id]
-  result = result.replace(placeholder) do (m: int, n: int, c: openArray[string]) -> string:
+  result = result.replace(PEG_PLACEHOLDER) do (m: int, n: int, c: openArray[string]) -> string:
     return resolvePlaceholder(c[0], thing) 
 
 proc execute*(action, thing: string): int {.discardable.} =
@@ -171,30 +185,28 @@ proc execute*(action, thing: string): int {.discardable.} =
   var keys = newSeq[string](0)
   for key, val in props.pairs:
     keys.add key
-  var cmd = lookupTask(action, keys)
+  var cmd = lookupActionDef(action, keys)
   if cmd != "":
-    cmd = cmd.replace(placeholder) do (m: int, n: int, c: openArray[string]) -> string:
+    cmd = cmd.replace(PEG_PLACEHOLDER) do (m: int, n: int, c: openArray[string]) -> string:
       return resolvePlaceholder(c[0], thing)
     echo "\n[pls]-> $1\n" % cmd
     result = execShellCmd cmd
 
 ### MAIN ###
 
-if not CONFIG.fileExists:
-  CONFIG.writeFile(defaultConfig)
+if not CONFIG_FILE.fileExists():
+  CONFIG_FILE.writeFile(DEFAULT_CFG)
 
 try:
-  CONFIG.load()
+  CONFIG_FILE.parseConfig()
 except:
   echo "(!) Unable to parse pls.yml file: $1" % getCurrentExceptionMsg()
   quit(1)
 
-var args = newSeq[string](0)
-
 for kind, key, val in getopt():
   case kind:
     of cmdArgument:
-      args.add key 
+      ARGS.add key 
     of cmdLongOption, cmdShortOption:
       case key:
         of "help", "h":
@@ -220,20 +232,20 @@ for kind, key, val in getopt():
     else:
       discard
 
-if args.len == 0:
+if ARGS.len == 0:
   echo USAGE 
   quit(0)
-elif args.len < 1:
+elif ARGS.len < 1:
   echo USAGE
   quit(0)
-elif args.len < 2:
+elif ARGS.len < 2:
   if DATA["things"].len == 0:
     echo "(!) No targets defined - nothing to do."
     quit(0)
   for key in DATA["things"].keys:
-    execute(args[0], key) 
+    execute(ARGS[0], key) 
 else:
   try:
-    execute(args[0], args[1]) 
+    execute(ARGS[0], ARGS[1]) 
   except:
     echo "(!) " & getCurrentExceptionMsg()
