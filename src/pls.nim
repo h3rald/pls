@@ -16,9 +16,9 @@ let USAGE* = """$1 v$2 - $3
 (c) 2021 $4
 
 Usage:
-  pls <action> [<thing>]   Executes <action> (on <thing>).
-                           <thing> can contain a start and/or leading * to perform
-                           simple searches.
+  pls <action> [<thing>, <thing2>, ...]   Executes <action> (on <thing>).
+                                          <thing> can contain a start and/or leading * 
+                                          to perform simple searches.
 
 Options:
   --help,    -h            Displays this message.
@@ -281,8 +281,9 @@ elif ARGS.len < 2:
   for key in DATA["things"].keys:
     execute(ARGS[0], key) 
 else:
-  for thing in filterItems("things", ARGS[1]):
-    try:
-      execute(ARGS[0], thing) 
-    except:
-      echo "(!) " & getCurrentExceptionMsg()
+  for arg in ARGS[1..ARGS.len-1]:
+    for thing in filterItems("things", arg):
+      try:
+        execute(ARGS[0], thing) 
+      except:
+        echo "(!) " & getCurrentExceptionMsg()
