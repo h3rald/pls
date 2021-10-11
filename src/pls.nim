@@ -26,8 +26,9 @@ Options:
                            <query> can contain a start and/or leading * for simple searches.
   --things,  -t[:<query>]  Displays all known things, optionally matching <query>
                            <query> can contain a start and/or leading * for simple searches.
-  --full,    -f            If -a or -t are specified, display all properties for each
-                           action or thing.
+  --debug,   -d            Runs in debug mode, without executing actions.
+  --full,    -f            If -a or -t are specified, display all properties for item.
+                           If -d is specified, outputs debug information for configuration parsing.
   --version, -v            Displays the version of the application.
 """ % [pkgTitle, pkgVersion, pkgDescription, pkgAuthor]
 
@@ -59,11 +60,20 @@ else:
 
 # Argument/option management
 var ARGS = newSeq[string]()
+var OPT_DEBUG = false
 var OPT_FULL = false
 var OPT_SHOW = ""
 var OPT_SHOW_QUERY = ""
 
 ### Helper Methods ##
+
+proc debug(s: string): void =
+  if OPT_DEBUG:
+    echo ". $1" % s
+
+proc full_debug(s: string): void =
+  if OPT_FULL:
+    debug(s)
 
 proc parseProperty(line: string, index: int): tuple[name: string, value: string] =
   let parts = line.split(":")
@@ -73,6 +83,7 @@ proc parseProperty(line: string, index: int): tuple[name: string, value: string]
   result.value = parts[1..parts.len-1].join(":").strip
 
 proc parseConfig(cfg: string): void =
+  full_debug("=== Parsing Configuration Start ===")
   var section = ""
   var itemId = ""
   var indent = 0
@@ -86,6 +97,7 @@ proc parseConfig(cfg: string): void =
         raise ConfigParseError(msg: "Line $1 - Invalid empty line within item." % $count)
       if line[0] == '#':
         # comment
+        full_debug("# Comment: $1" % line)
         continue
       if section == "actions":
         obj = "action ID"
@@ -103,6 +115,7 @@ proc parseConfig(cfg: string): void =
       if DATA[section][itemId].hasKey(p.name):
         raise ConfigParseError(msg: "Line $1 - Duplicate property '$2'" % [$count, p.name])
       DATA[section][itemId][p.name] = p.value
+      full_debug("    DATA.$1.$2.$3 = $4" % [section, itemId, p.name, p.value])
       indent = 4
       continue
     if l.startsWith("  "):
@@ -112,6 +125,7 @@ proc parseConfig(cfg: string): void =
         raise ConfigParseError(msg: "Line $1 - Invalid empty line within section." % $count)
       if line[0] == '#':
         # comment
+        full_debug("# Comment: $1" % line)
         continue
       if section == "actions":
         obj = "action"
@@ -130,6 +144,7 @@ proc parseConfig(cfg: string): void =
         raise ConfigParseError(msg: "Line $1 - Duplicate item '$2'" % [$count, itemId])
       # Start new item
       DATA[section][itemId] = newTable[string, string]()
+      full_debug("  DATA.$2.$3" % [obj, section, itemId])
       indent = 2
       continue
     if l == "":
@@ -139,19 +154,23 @@ proc parseConfig(cfg: string): void =
       if section == "actions":
         raise ConfigParseError(msg: "Line $1 - Duplicated 'actions' section." % $count)
       section = "actions"
+      full_debug("DATA.$1" % section)
       continue
     if l == "things:":
       if section == "things":
         raise ConfigParseError(msg: "Line $1 - Duplicated 'things' section." % $count)
       section = "things"
+      full_debug("DATA.$1" % section)
       continue
     if l.strip.startsWith("#"):
       # comment
+      full_debug("Comment: $1" % l)
       continue
     else:
       raise ConfigParseError(msg: "Line $1 - Invalid line." % $count)
+  full_debug("=== Parsing Configuration End ===")
 
-proc lookupActionDef(action: string, props: seq[string]): string =
+proc lookupActionDef(action, thing: string, props: seq[string]): string =
   result = ""
   if not DATA["actions"].hasKey(action):
     raise RuntimeError(msg: "Action '$1' not found" % action)
@@ -166,6 +185,7 @@ proc lookupActionDef(action: string, props: seq[string]): string =
     if match and params.len > score:
       score = params.len
       result = val
+      debug("$1\n  -> Score: $2 - Definition: $3\n  -> $4" % [thing, $score, key, val])
 
 proc resolvePlaceholder(ident, initialThing: string): string = 
   var id = ident
@@ -183,19 +203,24 @@ proc resolvePlaceholder(ident, initialThing: string): string =
   result = DATA["things"][thing][id]
   result = result.replace(PEG_PLACEHOLDER) do (m: int, n: int, c: openArray[string]) -> string:
     return resolvePlaceholder(c[0], thing) 
+  debug("   Resolving placeholder: $1 -> $2" % ["{{$1.$2}}" % [thing, id], result])
 
 proc execute*(action, thing: string): int {.discardable.} =
+  result = 0
   if not DATA["things"].hasKey(thing):
     raise RuntimeError(msg: "Thing '$1' not found. Nothing to do." % thing)
   let props = DATA["things"][thing]
   var keys = newSeq[string](0)
   for key, val in props.pairs:
     keys.add key
-  var cmd = lookupActionDef(action, keys)
+  var cmd = lookupActionDef(action, thing, keys)
   if cmd != "":
     cmd = cmd.replace(PEG_PLACEHOLDER) do (m: int, n: int, c: openArray[string]) -> string:
       return resolvePlaceholder(c[0], thing)
-    result = execShellCmd cmd
+    if OPT_DEBUG:
+      echo ".    Command to execute: $1" % cmd
+    else:
+      result = execShellCmd cmd
 
 proc filterItems*(t: string, query=""): seq[string] =
   result = newSeq[string]()
@@ -236,15 +261,6 @@ proc show*(t: string, query="", full = false): void =
 
 ### MAIN ###
 
-if not CONFIG_FILE.fileExists():
-  CONFIG_FILE.writeFile(DEFAULT_CFG)
-
-try:
-  CONFIG_FILE.parseConfig()
-except:
-  echo "(!) Unable to parse pls.yml file: $1" % getCurrentExceptionMsg()
-  quit(1)
-
 for kind, key, val in getopt():
   case kind:
     of cmdArgument:
@@ -259,6 +275,8 @@ for kind, key, val in getopt():
           quit(0)
         of "full", "f":
           OPT_FULL = true
+        of "debug", "d":
+          OPT_DEBUG = true
         of "actions", "a":
           OPT_SHOW = "actions"
           OPT_SHOW_QUERY = val
@@ -269,6 +287,15 @@ for kind, key, val in getopt():
           discard
     else:
       discard
+
+if not CONFIG_FILE.fileExists():
+  CONFIG_FILE.writeFile(DEFAULT_CFG)
+
+try:
+  CONFIG_FILE.parseConfig()
+except:
+  echo "(!) Unable to parse pls.yml file: $1" % getCurrentExceptionMsg()
+  quit(1)
 
 if ARGS.len < 1:
   if OPT_SHOW != "":
