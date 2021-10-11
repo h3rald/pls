@@ -294,7 +294,7 @@ if not CONFIG_FILE.fileExists():
 try:
   CONFIG_FILE.parseConfig()
 except:
-  echo "(!) Unable to parse pls.yml file: $1" % getCurrentExceptionMsg()
+  echo "(!) Unable to parse $1: $2" % [CONFIG_FILE, getCurrentExceptionMsg()]
   quit(1)
 
 if ARGS.len < 1:
