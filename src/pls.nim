@@ -55,7 +55,7 @@ things:
 """
 
 # The list of actions called, including dependencies
-var ACTION_CALL_STACK = newSeq[string]()
+var COMMAND_STACK = newSeq[string]()
 
 # The path to the pls.yml configuration file.
 var CONFIG_FILE: string
@@ -237,7 +237,7 @@ proc lookupActionDef(action, thing: string, props: seq[string]): string =
     if match and params.len > score:
       score = params.len
       result = val
-      debug("  Thing: $1\n.   -> Definition: $2\n.   -> $3" % [thing, key, val])
+      debug("  Thing: $1\n.     -> Matching Definition: $2\n.     -> Command Definition: $3" % [thing, key, val])
 
 proc resolvePlaceholder(ident, initialThing: string): string = 
   var id = ident
@@ -255,7 +255,7 @@ proc resolvePlaceholder(ident, initialThing: string): string =
   result = DATA["things"][thing][id]
   result = result.replace(PEG_PLACEHOLDER) do (m: int, n: int, c: openArray[string]) -> string:
     return resolvePlaceholder(c[0], thing) 
-  debug("     Resolving placeholder: $1 -> $2" % ["{{$1.$2}}" % [thing, id], result])
+  debug("       Resolving placeholder: $1 -> $2" % ["{{$1.$2}}" % [thing, id], result])
 
 proc printCommandWithDeps*(command: string, level = 0): void =
   echo "  ".repeat(level) & "  - " & command
@@ -264,16 +264,16 @@ proc printCommandWithDeps*(command: string, level = 0): void =
       printCommandWithDeps(dep, level+1)
 
 proc execute*(action, thing: string): int {.discardable.} =
-  let actionCall = "$1 $2" % [action, thing]
-  if ACTION_CALL_STACK.contains(actionCall):
-    debug("Command: $1 (skipped)" % actionCall)
+  let command = "$1 $2" % [action, thing]
+  if COMMAND_STACK.contains(command):
+    debug("Command: $1 (skipped)" % command)
     return 0
   else: 
-    debug("Command: $1" % actionCall)
-    ACTION_CALL_STACK.add(actionCall)
+    debug("Command: $1" % command)
+    COMMAND_STACK.add(command)
   # Check and execute dependencies
-  if DATA["deps"].hasKey(actionCall):
-    for dep in DATA["deps"][actionCall].values:
+  if DATA["deps"].hasKey(command):
+    for dep in DATA["deps"][command].values:
       let instance = parseActionInstance(dep)
       for instanceThing in instance.things:
         execute(instance.action, instanceThing)
@@ -288,7 +288,7 @@ proc execute*(action, thing: string): int {.discardable.} =
   if cmd != "":
     cmd = cmd.replace(PEG_PLACEHOLDER) do (m: int, n: int, c: openArray[string]) -> string:
       return resolvePlaceholder(c[0], thing)
-    debug("  -> Executing: $1" % cmd)
+    debug("    -> Resolved Command: $1" % cmd)
     if not OPT_INSPECT:
       result = execShellCmd cmd
 
