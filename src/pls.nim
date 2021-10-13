@@ -1,10 +1,10 @@
-
-from sequtils import all
-from pegs     import peg, match, replace
-from os       import getenv, fileExists, execShellCmd, `/`
-from parseopt import getopt, cmdLongOption, cmdShortOption, cmdArgument
-from strutils import `%`, split, strip, join, startsWith, endsWith, replace, contains
-from tables   import newTable, TableRef, `[]=`, `[]`, hasKey, pairs, len, keys
+import
+  sequtils,
+  pegs,
+  os,
+  parseopt,
+  strutils,
+  tables
 
 import
   plspkg/config
@@ -26,7 +26,7 @@ Options:
                            <query> can contain a start and/or leading * for simple searches.
   --things,  -t[:<query>]  Displays all known things, optionally matching <query>
                            <query> can contain a start and/or leading * for simple searches.
-  --debug,   -d            Runs in debug mode, without executing actions.
+  --inspect, -i            Display information on the specified command.
   --full,    -f            If -a or -t are specified, display all properties for item.
                            If -d is specified, outputs debug information for configuration parsing.
   --version, -v            Displays the version of the application.
@@ -38,14 +38,17 @@ let PEG_ID* = peg"^[a-z0-9][a-zA-Z0-9._-]+$"
 let PEG_DEF* = peg"^[a-z0-9][a-zA-Z0-9._-]+ ('+' [a-z0-9][a-zA-Z0-9._-]+)*$"
 
 # Hash containing all the actions and things saved in the configuration file.
-var DATA* = newTable[string, TableRef[string, TableRef[string, string]]]()
-DATA["actions"] = newTable[string, TableRef[string, string]]()
-DATA["things"] = newTable[string, TableRef[string, string]]()
+var DATA* = newOrderedTable[string, OrderedTableRef[string, OrderedTableRef[string, string]]]()
+DATA["actions"] = newOrderedTable[string, OrderedTableRef[string, string]]()
+DATA["things"] = newOrderedTable[string, OrderedTableRef[string, string]]()
+DATA["deps"] = newOrderedTable[string, OrderedTableRef[string, string]]()
 
 # Default configuration file, saved if no pls.yml is present on the system.
 const DEFAULT_CFG = """
 actions:
   # Define actions here
+deps:
+  # Define dependencies here
 things:
   # Define things here
 """
@@ -75,12 +78,29 @@ proc full_debug(s: string): void =
   if OPT_FULL:
     debug(s)
 
-proc parseProperty(line: string, index: int): tuple[name: string, value: string] =
+proc parseProperty(line: string, count: int): tuple[name: string, value: string] =
   let parts = line.split(":")
   if parts.len < 2:
-    raise ConfigParseError(msg: "Line $1 - Invalid property." % $index)
+    raise ConfigParseError(msg: "Line $1 - Invalid property." % $count)
   result.name = parts[0].strip
   result.value = parts[1..parts.len-1].join(":").strip
+
+proc parseActionInstance(item: string, count: int = 0): tuple[action: string, things: seq[string]] =
+  let parts = item.split(" ")
+  result.action = ""
+  result.things = newSeq[string]()
+  if parts.len == 0:
+    raise ConfigParseError(msg: "Line $1 - No action specified.")
+  result.action = parts[0].strip
+  if parts.len == 1:
+    raise ConfigParseError(msg: "Line $1 - No thing specified for action '$2'." % [$count, result.action])
+  if not result.action.match(PEG_ID):
+    raise ConfigParseError(msg: "Line $1 - Invalid action '$2'." % [$count, result.action])
+  for part in parts[1..parts.len-1]:
+    let thing = part.strip
+    if not thing.match(PEG_ID):
+      raise ConfigParseError(msg: "Line $1 - Invalid thing '$2'." % [$count, thing])
+    result.things.add(thing)
 
 proc parseConfig(cfg: string): void =
   full_debug("=== Parsing Configuration Start ===")
@@ -88,8 +108,10 @@ proc parseConfig(cfg: string): void =
   var itemId = ""
   var indent = 0
   var count = 0
+  var depCount = 0
   for l in cfg.lines:
     count += 1
+    # Third level: items
     if l.startsWith("    "):
       var line = l.strip
       var obj = ""
@@ -103,12 +125,22 @@ proc parseConfig(cfg: string): void =
         obj = "action ID"
       if section == "things":
         obj = "property name"
+      if section == "deps":
+        obj = "dependency"
       if l.strip(true, false).len < l.strip(false, true).len-4:
         raise ConfigParseError(msg: "Line $1 - Invalid $2 indentation, expected 4 spaces." % [$count, obj])
       if section == "" or indent == 0:
         raise ConfigParseError(msg: "Line $1 - Invalid $2 indentation." % [$count, obj])
       if itemId == "":
         raise ConfigParseError(msg: "Line $1 - Invalid $2 indentation (not within an item)." % [$count, obj])
+      if line[0] == '-':
+        if section != "deps":
+          raise ConfigParseError(msg: "Line $1 - Unexpected array in section '$2'" % [$count, section])
+        let item = line[1..line.len-1].strip
+        let dep = parseActionInstance(item, count)
+        DATA[section][itemId][$depCount] = "$1 $2" % [dep.action, dep.things.join(" ")]
+        depCount += 1
+        continue
       let p = parseProperty(line, count)
       if (section == "actions" and not p.name.match(PEG_DEF)) or (section == "things" and not p.name.match(PEG_ID)):
         raise ConfigParseError(msg: "Line $1 - Invalid $2 '$3'" % [$count, obj, p.name])
@@ -118,6 +150,7 @@ proc parseConfig(cfg: string): void =
       full_debug("    DATA.$1.$2.$3 = $4" % [section, itemId, p.name, p.value])
       indent = 4
       continue
+    # Second level: definitions
     if l.startsWith("  "):
       var line = l.strip
       var obj = ""
@@ -129,31 +162,45 @@ proc parseConfig(cfg: string): void =
         continue
       if section == "actions":
         obj = "action"
-      if section == "things":
+      elif section == "things":
         obj = "thing"
+      elif section == "deps":
+        obj = "dependency"
+        depCount = 0
       if l.strip(true, false).len < l.strip(false, true).len-2:
-        raise ConfigParseError(msg: "Line $1 - Invalid $2 indentationn, expected 2 spaces." % [$count, obj])
+        raise ConfigParseError(msg: "Line $1 - Invalid $2 indentation, expected 2 spaces." % [$count, obj])
       if section == "":
         raise ConfigParseError(msg: "Line $1 - Invalid $2 indentation." % [$count, obj])
       if line[line.len-1] != ':' or line == ":":
         raise ConfigParseError(msg: "Line $1 - Invalid $2 identifier." % [$count, obj])
       itemId = line[0..line.len-2]
-      if not itemId.match(PEG_ID):
-        raise ConfigParseError(msg: "Line $1 - Invalid $2 identifier '$3'." % [$count, obj, itemId])
+      if section == "deps":
+        let instance = parseActionInstance(itemId, count)
+        itemId = "$1 $2" % [instance.action, instance.things.join(" ")]
+      elif ["things", "actions"].contains(section):
+        if not itemId.match(PEG_ID):
+          raise ConfigParseError(msg: "Line $1 - Invalid $2 identifier '$3'." % [$count, obj, itemId])
       if DATA[section].hasKey(itemId):
         raise ConfigParseError(msg: "Line $1 - Duplicate item '$2'" % [$count, itemId])
       # Start new item
-      DATA[section][itemId] = newTable[string, string]()
+      DATA[section][itemId] = newOrderedTable[string, string]()
       full_debug("  DATA.$2.$3" % [obj, section, itemId])
       indent = 2
       continue
     if l == "":
       itemId = ""
       continue
+    # First level: sections
     if l == "actions:":
       if section == "actions":
         raise ConfigParseError(msg: "Line $1 - Duplicated 'actions' section." % $count)
       section = "actions"
+      full_debug("DATA.$1" % section)
+      continue
+    if l == "deps:":
+      if section == "deps":
+        raise ConfigParseError(msg: "Line $1 - Duplicated 'deps' section." % $count)
+      section = "deps"
       full_debug("DATA.$1" % section)
       continue
     if l == "things:":
@@ -206,9 +253,16 @@ proc resolvePlaceholder(ident, initialThing: string): string =
   debug("   Resolving placeholder: $1 -> $2" % ["{{$1.$2}}" % [thing, id], result])
 
 proc execute*(action, thing: string): int {.discardable.} =
+  # Check and execute dependencies
+  let depDef = "$1 $2" % [action, thing]
+  if DATA["deps"].hasKey(depDef):
+    for dep in DATA["deps"][depDef].values:
+      let instance = parseActionInstance(dep)
+      for instanceThing in instance.things:
+        execute(instance.action, instanceThing)
   result = 0
   if not DATA["things"].hasKey(thing):
-    raise RuntimeError(msg: "Thing '$1' not found. Nothing to do." % thing)
+    raise RuntimeError(msg: "Thing '$1' not found. Action '$2' aborted." % [thing, action])
   let props = DATA["things"][thing]
   var keys = newSeq[string](0)
   for key, val in props.pairs:
@@ -275,7 +329,7 @@ for kind, key, val in getopt():
           quit(0)
         of "full", "f":
           OPT_FULL = true
-        of "debug", "d":
+        of "inspect", "i":
           OPT_DEBUG = true
         of "actions", "a":
           OPT_SHOW = "actions"
@@ -305,12 +359,11 @@ if ARGS.len < 1:
     echo USAGE
     quit(0)
 elif ARGS.len < 2:
-  for key in DATA["things"].keys:
-    execute(ARGS[0], key) 
+  stderr.writeLine "(!) Too few arguments - no thing(s) specified."
 else:
   for arg in ARGS[1..ARGS.len-1]:
     for thing in filterItems("things", arg):
       try:
         execute(ARGS[0], thing) 
       except:
-        echo "(!) " & getCurrentExceptionMsg()
+        stderr.writeLine "(!) " & getCurrentExceptionMsg()
