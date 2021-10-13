@@ -28,8 +28,9 @@ Options:
   --things,  -t[:<query>]  Displays all known things, optionally matching <query>
                            <query> can contain a start and/or leading * for simple searches.
   --inspect, -i            Display information on the specified command.
-  --full,    -f            If -a or -t are specified, display all properties for item.
+  --full,    -f            If -a or -t are specified, display all properties for items.
                            If -d is specified, outputs debug information for configuration parsing.
+                           Otherwise, print additional information when executing commands.
   --version, -v            Displays the version of the application.
 """ % [pkgTitle, pkgVersion, pkgDescription, pkgAuthor]
 
@@ -290,6 +291,8 @@ proc execute*(action, thing: string): int {.discardable.} =
       return resolvePlaceholder(c[0], thing)
     debug("    -> Resolved Command: " & cmd)
     if not OPT_INSPECT:
+      if OPT_FULL:
+        echo "=== Executing Action: $1 -> $2" % [command, cmd]
       result = execShellCmd cmd
 
 proc filterItems*(t: string, query=""): seq[string] =
