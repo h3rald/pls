@@ -24,6 +24,7 @@ Options:
   --help,    -h            Displays this message.
   --actions, -a[:<query>]  Displays all known actions, optionally matching <query>.
                            <query> can contain a start and/or leading * for simple searches.
+  --deps,    -d            Displays dependencies of the specified command.
   --things,  -t[:<query>]  Displays all known things, optionally matching <query>
                            <query> can contain a start and/or leading * for simple searches.
   --inspect, -i            Display information on the specified command.
@@ -53,6 +54,9 @@ things:
   # Define things here
 """
 
+# The list of actions called, including dependencies
+var ACTION_CALL_STACK = newSeq[string]()
+
 # The path to the pls.yml configuration file.
 var CONFIG_FILE: string
 
@@ -63,15 +67,16 @@ else:
 
 # Argument/option management
 var ARGS = newSeq[string]()
-var OPT_DEBUG = false
+var OPT_INSPECT = false
 var OPT_FULL = false
+var OPT_DEPS = false
 var OPT_SHOW = ""
 var OPT_SHOW_QUERY = ""
 
 ### Helper Methods ##
 
 proc debug(s: string): void =
-  if OPT_DEBUG:
+  if OPT_INSPECT:
     echo ". $1" % s
 
 proc full_debug(s: string): void =
@@ -232,7 +237,7 @@ proc lookupActionDef(action, thing: string, props: seq[string]): string =
     if match and params.len > score:
       score = params.len
       result = val
-      debug("$1\n  -> Score: $2 - Definition: $3\n  -> $4" % [thing, $score, key, val])
+      debug("  Thing: $1\n.   -> Definition: $2\n.   -> $3" % [thing, key, val])
 
 proc resolvePlaceholder(ident, initialThing: string): string = 
   var id = ident
@@ -250,13 +255,25 @@ proc resolvePlaceholder(ident, initialThing: string): string =
   result = DATA["things"][thing][id]
   result = result.replace(PEG_PLACEHOLDER) do (m: int, n: int, c: openArray[string]) -> string:
     return resolvePlaceholder(c[0], thing) 
-  debug("   Resolving placeholder: $1 -> $2" % ["{{$1.$2}}" % [thing, id], result])
+  debug("     Resolving placeholder: $1 -> $2" % ["{{$1.$2}}" % [thing, id], result])
+
+proc printCommandWithDeps*(command: string, level = 0): void =
+  echo "  ".repeat(level) & "  - " & command
+  if DATA["deps"].contains(command):
+    for dep in DATA["deps"][command].values:
+      printCommandWithDeps(dep, level+1)
 
 proc execute*(action, thing: string): int {.discardable.} =
+  let actionCall = "$1 $2" % [action, thing]
+  if ACTION_CALL_STACK.contains(actionCall):
+    debug("Command: $1 (skipped)" % actionCall)
+    return 0
+  else: 
+    debug("Command: $1" % actionCall)
+    ACTION_CALL_STACK.add(actionCall)
   # Check and execute dependencies
-  let depDef = "$1 $2" % [action, thing]
-  if DATA["deps"].hasKey(depDef):
-    for dep in DATA["deps"][depDef].values:
+  if DATA["deps"].hasKey(actionCall):
+    for dep in DATA["deps"][actionCall].values:
       let instance = parseActionInstance(dep)
       for instanceThing in instance.things:
         execute(instance.action, instanceThing)
@@ -271,9 +288,8 @@ proc execute*(action, thing: string): int {.discardable.} =
   if cmd != "":
     cmd = cmd.replace(PEG_PLACEHOLDER) do (m: int, n: int, c: openArray[string]) -> string:
       return resolvePlaceholder(c[0], thing)
-    if OPT_DEBUG:
-      echo ".    Command to execute: $1" % cmd
-    else:
+    debug("  -> Executing: $1" % cmd)
+    if not OPT_INSPECT:
       result = execShellCmd cmd
 
 proc filterItems*(t: string, query=""): seq[string] =
@@ -330,7 +346,9 @@ for kind, key, val in getopt():
         of "full", "f":
           OPT_FULL = true
         of "inspect", "i":
-          OPT_DEBUG = true
+          OPT_INSPECT = true
+        of "deps", "d":
+          OPT_DEPS = true
         of "actions", "a":
           OPT_SHOW = "actions"
           OPT_SHOW_QUERY = val
@@ -361,9 +379,14 @@ if ARGS.len < 1:
 elif ARGS.len < 2:
   stderr.writeLine "(!) Too few arguments - no thing(s) specified."
 else:
-  for arg in ARGS[1..ARGS.len-1]:
+  let action = ARGS[0]
+  let targets = ARGS[1..ARGS.len-1]
+  if OPT_DEPS:
+    printCommandWithDeps("$1 $2" % [action, targets.join(" ")])
+    quit(0)
+  for arg in targets:
     for thing in filterItems("things", arg):
       try:
-        execute(ARGS[0], thing) 
+        execute(action, thing) 
       except:
         stderr.writeLine "(!) " & getCurrentExceptionMsg()
