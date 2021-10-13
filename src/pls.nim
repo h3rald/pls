@@ -288,7 +288,7 @@ proc execute*(action, thing: string): int {.discardable.} =
   if cmd != "":
     cmd = cmd.replace(PEG_PLACEHOLDER) do (m: int, n: int, c: openArray[string]) -> string:
       return resolvePlaceholder(c[0], thing)
-    debug("    -> Resolved Command: $1" % cmd)
+    debug("    -> Resolved Command: " & cmd)
     if not OPT_INSPECT:
       result = execShellCmd cmd
 
