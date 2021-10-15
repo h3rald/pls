@@ -304,7 +304,7 @@ proc execute*(action, thing: string): int {.discardable.} =
         echo "=== Executing Command: $1 -> $2" % [command, cmd]
       result = execShellCmd cmd
       if result != 0:
-        raise RuntimeError(msg: "Command '$1' failed." % command)
+        raise RuntimeError(msg: "Command '$1' failed (Error Code: $2)." % [command, $result])
 
 proc filterItems*(t: string, query=""): seq[string] =
   result = newSeq[string]()
