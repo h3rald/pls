@@ -91,7 +91,7 @@ proc parseProperty(line: string, count: int): tuple[name: string, value: string]
   result.name = parts[0].strip
   result.value = parts[1..parts.len-1].join(":").strip
 
-proc parseActionInstance(item: string, count: int = 0): tuple[action: string, things: seq[string]] =
+proc parseCommand(item: string, count: int = 0): tuple[action: string, things: seq[string]] =
   let parts = item.split(" ")
   result.action = ""
   result.things = newSeq[string]()
@@ -143,7 +143,7 @@ proc parseConfig(cfg: string): void =
         if section != "deps":
           raise ConfigParseError(msg: "Line $1 - Unexpected array in section '$2'" % [$count, section])
         let item = line[1..line.len-1].strip
-        let dep = parseActionInstance(item, count)
+        let dep = parseCommand(item, count)
         DATA[section][itemId][$depCount] = "$1 $2" % [dep.action, dep.things.join(" ")]
         depCount += 1
         continue
@@ -181,7 +181,7 @@ proc parseConfig(cfg: string): void =
         raise ConfigParseError(msg: "Line $1 - Invalid $2 identifier." % [$count, obj])
       itemId = line[0..line.len-2]
       if section == "deps":
-        let instance = parseActionInstance(itemId, count)
+        let instance = parseCommand(itemId, count)
         itemId = "$1 $2" % [instance.action, instance.things.join(" ")]
       elif ["things", "actions"].contains(section):
         if not itemId.match(PEG_ID):
@@ -280,7 +280,7 @@ proc execute*(action, thing: string): int {.discardable.} =
   var lastResult = 0
   if DATA["deps"].hasKey(command):
     for dep in DATA["deps"][command].values:
-      let instance = parseActionInstance(dep)
+      let instance = parseCommand(dep)
       for instanceThing in instance.things:
         hasDeps = true
         if lastResult == 0:
