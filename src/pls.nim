@@ -223,9 +223,12 @@ proc parseConfig(cfg: string): void =
       raise ConfigParseError(msg: "Line $1 - Invalid line." % $count)
   full_debug("=== Parsing Configuration End ===")
 
-proc lookupActionDef(action, thing: string, props: seq[string]): string =
+proc lookupActionDef(action, thing: string, props: seq[string], deps: bool): string =
   result = ""
   if not DATA["actions"].hasKey(action):
+    if deps:
+      # Deps exist, do not fail, just return empty action.
+      return ""
     raise RuntimeError(msg: "Action '$1' not found" % action)
   var defs = DATA["actions"][action]
   var score = 0
@@ -273,27 +276,35 @@ proc execute*(action, thing: string): int {.discardable.} =
     debug("Command: $1" % command)
     COMMAND_STACK.add(command)
   # Check and execute dependencies
+  var hasDeps = false
+  var lastResult = 0
   if DATA["deps"].hasKey(command):
     for dep in DATA["deps"][command].values:
       let instance = parseActionInstance(dep)
       for instanceThing in instance.things:
-        execute(instance.action, instanceThing)
+        hasDeps = true
+        if lastResult == 0:
+          lastResult = execute(instance.action, instanceThing)
   result = 0
   if not DATA["things"].hasKey(thing):
+    if hasDeps:
+      return 0
     raise RuntimeError(msg: "Thing '$1' not found. Action '$2' aborted." % [thing, action])
   let props = DATA["things"][thing]
   var keys = newSeq[string](0)
   for key, val in props.pairs:
     keys.add key
-  var cmd = lookupActionDef(action, thing, keys)
+  var cmd = lookupActionDef(action, thing, keys, hasDeps)
   if cmd != "":
     cmd = cmd.replace(PEG_PLACEHOLDER) do (m: int, n: int, c: openArray[string]) -> string:
       return resolvePlaceholder(c[0], thing)
     debug("    -> Resolved Command: " & cmd)
     if not OPT_INSPECT:
       if OPT_FULL:
-        echo "=== Executing Action: $1 -> $2" % [command, cmd]
+        echo "=== Executing Command: $1 -> $2" % [command, cmd]
       result = execShellCmd cmd
+      if result != 0:
+        raise RuntimeError(msg: "Command '$1' failed." % command)
 
 proc filterItems*(t: string, query=""): seq[string] =
   result = newSeq[string]()
