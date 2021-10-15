@@ -149,9 +149,9 @@ The following schema is based on the [YAML Schema](https://asdf-standard.readthe
 ```
 %YAML 1.1
 ---
-$schema: "https://h3rald.com/pls/yaml-schema/v1.0.0"
-id: "https://h3rald.com/schemas/pls/metadata-1.0.0"
-tag: "tag:h3rald.com:pls/metadata-1.0.0"
+$schema: https://h3rald.com/pls/yaml-schema/v1.0.0
+id: https://h3rald.com/schemas/pls/metadata-1.0.0
+tag: tag:h3rald.com:pls/metadata-1.0.0
 title: pls Configuration File
 type: object
   properties:
@@ -172,7 +172,7 @@ type: object
           $ref: #/$defs/dependencies
 required: [things, actions]
 additionalProperties: false
-"$defs":
+$defs:
   thing:
     type: object
     patternProperties:
