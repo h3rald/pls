@@ -12,12 +12,12 @@
 
 - Define a catalog of {{as -> _actions_}} to perform on {{ts -> _things_}}, which will result in {{cs -> _commands_}} to be executed, each with the same simple syntax.
 - Define a catalog of {{ts}}, representing virtually anything that can be the object of a {{sc -> _shell command_}} or referred within other {{ts}}.
-- Define a set of {{ds -> _dependencies_}} among {{cs}}.
-- Manage aliases to commonly-used strings ({{prs -> _properties_}})to use within other sections of the configuration.
+- Define a set of {{ds -> _dependencies_}} among {{cs}}, in the form of {{cs}}.
+- Manage aliases to commonly-used strings ({{prs -> _properties_}}) to use within other sections of the configuration.
 
 ### Hello, World!
 
-OK, not exactly the best example to show off some of {{p}} power, but here's minimal example of how everything works. Given the following {{cfg}} file:
+Here's minimal but quite comprehensive example of how everything works with {{p}}. Given the following {{cfg}} file (placed in <var>$HOME</var> or in <var>%USERPROFILE%</var> on Windows):
 
 ```
 things:
@@ -47,7 +47,7 @@ It will be possible to run the following {{c}} to build the {{p}} program and co
 
 ### Key Concepts
 
-{{p}} is based on a few intuitive abstractions that are used for its configurations, as described in the following sections.
+{{p}} is based on a few intuitive abstractions that are used for its configuration, as described in the following sections.
 
 #### Shell Command
 
@@ -166,7 +166,7 @@ This configuration file should give you an idea of how to configure {{p}} to exe
 
 ...and so on. Let's see how to configure each section more in detail.
 
-#### Configuring Things
+#### Configuring {{ts}}
 
 Keep in mind that a {{t}} is going to be used as the object or target of your {{a}}, so it typically should represent a file, a folder, a URL, a service name, and so on. Also, it makes sense to define new {{ts}} if they are going to be used often in actions or referenced in other {{ts}}. In relation to the [configuration example](#cfg-example), note how the [home](class:kwd) {{t}} is re-used in [dev](class:kwd) and [bin](class:kwd).
 
@@ -184,7 +184,7 @@ Any {{pr}} of any {{t}} can be reused via a {{pl}}:
 >
 > Otherwise, you can use absolute {{pls -> _placeholders_}} by prepanding the name of the {{t}} followed by a dot, and then the {{pr}} identifier, e.g. [{\{home.value}}](class:kwd).
 
-#### Configuring Actions
+#### Configuring {{as}}
 
 While {{pr}} identifiers are just straightforward names, {{as}} are identified by a combination of plus-separated {{pr}} identifiers. Each {{a}} can have one or more {{ads -> _action definitions_}}, each specifying a different set of {{pr}} identifiers.
 
@@ -215,7 +215,7 @@ nothing will happen, as there is no matching {{ad}} for [home](class:kwd), which
 >
 > If several {{ads}} match for the specified {{t}}, the one with the most matching {{prs}} will be used.
 
-#### Configuring Dependencies
+#### Configuring {{ds}}
 
 You can use the [dependencies](class:kwd) section to configure {{ds}} among commands. Essentially, for each {{c}} (comprised of an {{a}} followed by one or more {{t}}), you can specify a list comprised of one or more {{cs}} that will be executed beforehand.
 
@@ -235,7 +235,7 @@ will cause the [build self](class:cmd) {{c}} to be executed beforehand.
 > - all its {{ds}} are executed sequentially before the {{c}} is executed
 > - if one dependent {{c}} fails, no more {{ds}} will be executed, and the {{c}} will not be executed
 
-### Executing {{p}} Commands
+### Executing {{cs}}
 
 The previous sections already contain a few examples on how to run {{cs}} with {{p}}. Essentially, the syntax is always the same:
 
@@ -257,7 +257,7 @@ will execute execute the [build](class:kwd) {{a}} on the [self](class:kwd) {{t}}
 
 There are no built-in {{cs}}, so the first argument specified after {{p}} is interpreted as an {{a}}, and the following ones as things. If no things are specified, an error will be printed.
 
-### Inspecting Commands
+### Inspecting {{cs}}
 
 If you want to see what {{scs -> _shell commands_}} a particular {{c}} will execute, or how certain {{t}} properties will be matched or used, you can specify the [-i](class:arg) ([\-\-inspect](class:arg)) option to print some diagnostic messages and the resulting shell {{cs}}, without executing them:
 
@@ -279,7 +279,7 @@ If you want to see what {{scs -> _shell commands_}} a particular {{c}} will exec
 > If you specify the [-f](class:arg) together with the [-i](class:arg) option, additional messages will be printed related to the processing of the {{cfg}} file.
 > If you specify only the [-f](class:arg) when executing a {{c}}, the resulting {{sc}} will be printed before being executed.
 
-### Displaying Actions, Things, and Dependencies
+### Displaying {{as}}, {{ts}}, and {{ts}}
 
 If you want to quickly display the {{as}}, {{ts}} or {{ds}} that are available without opening the {{cfg}} file, you can use the [-a](class:arg) ([\-\-actions](class:arg)), [-t](class:arg) ([\-\-things](class:arg)), and [-d](class:arg) ([\-\-deps](class:arg)) respectively. Unless the [-f](class:arg) ([\-\-full](class:arg)) option is specified as well, a simply list of {{as}}, {{ts}}, or {{ds}} will be displayed.
 
