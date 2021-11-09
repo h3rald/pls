@@ -39,7 +39,7 @@ deps:
     - build self
 ```
 
-It will be possible to run the following {{c}} to build the {{p}} program and copy it to the [/home/h3rald/bin](class:dir):
+It will be possible to run the following {{c}} to build the {{p}} program itself and copy it to the [/home/h3rald/bin](class:dir):
 
 > %terminal%
 >
