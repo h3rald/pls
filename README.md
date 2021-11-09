@@ -1,7 +1,7 @@
-[![Nimble](https://raw.githubusercontent.com/yglukhov/nimble-tag/master/nimble.png)](https://github.com/h3rald/pls)
+[![Nimble](https://raw.githubusercontent.com/yglukhov/nimble-tag/master/nimble.png)](https://nimble.directory/pkg/pls)
 
 [![Release](https://img.shields.io/github/release/h3rald/pls.svg)]()
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](https://raw.githubusercontent.com/h3rald/litestore/master/LICENSE)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](https://raw.githubusercontent.com/h3rald/pls/master/LICENSE)
 ![Build Status](https://github.com/h3rald/pls/actions/workflows/ci.yml/badge.svg)
 
 # pls &mdash; A polite but determined task runner
