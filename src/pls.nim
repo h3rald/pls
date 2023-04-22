@@ -379,7 +379,7 @@ if not CONFIG_FILE.fileExists():
 
 try:
   CONFIG_FILE.parseConfig()
-except:
+except CatchableError:
   echo "(!) Unable to parse $1: $2" % [CONFIG_FILE, getCurrentExceptionMsg()]
   quit(1)
 
@@ -402,5 +402,5 @@ else:
     for thing in filterItems("things", arg):
       try:
         execute(action, thing) 
-      except:
+      except CatchableError:
         stderr.writeLine "(!) " & getCurrentExceptionMsg()
