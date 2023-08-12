@@ -1,6 +1,6 @@
 [![Nimble](https://raw.githubusercontent.com/yglukhov/nimble-tag/master/nimble.png)](https://nimble.directory/pkg/pls)
 
-[![Release](https://img.shields.io/github/release/h3rald/pls.svg)]()
+![Release](https://img.shields.io/github/release/h3rald/pls.svg)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](https://raw.githubusercontent.com/h3rald/pls/master/LICENSE)
 ![Build Status](https://github.com/h3rald/pls/actions/workflows/ci.yml/badge.svg)
 
